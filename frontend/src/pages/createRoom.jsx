@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import socket from '../socket'; // ✅ Shared socket instance
 
 export default function CreateRoom() {
   const [name, setName] = useState('');
@@ -17,7 +18,14 @@ export default function CreateRoom() {
       return;
     }
 
-    // Navigate to the Room page with roomId and pass state
+    // ✅ Save to sessionStorage
+    sessionStorage.setItem('username', name);
+    sessionStorage.setItem('roomId', roomId);
+
+    // ✅ Emit join-room to server
+    socket.emit('join-room', { name, roomId });
+
+    // ✅ Navigate to room with host flag
     navigate(`/room/${roomId}`, {
       state: {
         name,

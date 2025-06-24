@@ -1,15 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import io from 'socket.io-client';
 import { sampleTexts } from '../data/dummy';
-import Leaderboard from './Leaderboard';
+import socket from '../socket';
 
-const socket = io('http://localhost:5000');
-
-export default function Typingarea() {
+export default function Typingarea({ players = [], name, solo = false }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { name, roomId } = location.state || {};
+  const roomId = solo ? null : (location.state?.roomId || sessionStorage.getItem('roomId'));
 
   const [text, setText] = useState('');
   const [userInput, setUserInput] = useState('');
@@ -17,11 +14,11 @@ export default function Typingarea() {
   const [timer, setTimer] = useState(60);
   const [isRunning, setIsRunning] = useState(false);
   const [showResult, setShowResult] = useState(false);
-  const [players, setPlayers] = useState([]);
+
   const intervalRef = useRef(null);
 
   useEffect(() => {
-    if (!name || !roomId) {
+    if (!solo && (!name || !roomId)) {
       navigate('/');
       return;
     }
@@ -29,39 +26,52 @@ export default function Typingarea() {
     const randomText = sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
     setText(randomText);
 
-    socket.emit('join-room', { name, roomId });
+    if (!solo) {
+      socket.emit('join-room', { name, roomId });
 
-    const handleRoomData = ({ players, text: serverText }) => {
-      setPlayers(players);
-      if (serverText) setText(serverText);
-    };
+      const handleRoomData = ({ text: serverText }) => {
+        if (serverText) setText(serverText);
+      };
 
-    socket.on('room-data', handleRoomData);
+      socket.on('room-data', handleRoomData);
 
-    return () => {
-      socket.off('room-data', handleRoomData);
-      socket.disconnect();
-    };
-  }, [name, roomId, navigate]);
+      return () => {
+        socket.off('room-data', handleRoomData);
+      };
+    }
+  }, [name, roomId, navigate, solo]);
 
   useEffect(() => {
-    if (isRunning && timer > 0) {
-      intervalRef.current = setInterval(() => {
-        setTimer(prev => {
-          if (prev <= 1) {
-            clearInterval(intervalRef.current);
-            setIsRunning(false);
-            setShowResult(true);
-            const wpm = calculateWPM();
-            const accuracy = calculateAccuracy();
-            sendResult(wpm, accuracy);
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(intervalRef.current);
-  }, [isRunning]);
+  // Start the timer only when the test is running and time is left
+  if (isRunning && timer > 0) {
+    intervalRef.current = setInterval(() => {
+      setTimer(prevTimer => {
+        if (prevTimer <= 1) {
+          // Timer hits 0 – calculate final results
+          clearInterval(intervalRef.current);
+          setIsRunning(false);
+          setShowResult(true);
+
+          const finalWPM = calculateWPM();
+          const finalAccuracy = calculateAccuracy();
+
+          // Send final score to server
+          sendResult(finalWPM, finalAccuracy);
+
+          return 0; // stop timer
+        }
+        return prevTimer - 1;
+      });
+    }, 1000);
+  }
+
+  // Cleanup interval when component unmounts or timer stops
+  return () => {
+    clearInterval(intervalRef.current);
+  };
+}, [isRunning, timer]);
+
+
 
   const handleChange = (e) => {
     const val = e.target.value;
@@ -72,13 +82,21 @@ export default function Typingarea() {
       setIsRunning(true);
     }
 
+    // Emit real-time score on every keystroke
+    if (!solo) {
+      socket.emit('submit-score', {
+        name,
+        roomId,
+        wpm: calculateWPM(),
+        accuracy: calculateAccuracy(),
+      });
+    }
+
     if (val === text) {
       clearInterval(intervalRef.current);
       setIsRunning(false);
       setShowResult(true);
-      const wpm = calculateWPM();
-      const accuracy = calculateAccuracy();
-      sendResult(wpm, accuracy);
+      sendResult(calculateWPM(), calculateAccuracy());
     }
   };
 
@@ -100,12 +118,9 @@ export default function Typingarea() {
   };
 
   const sendResult = (wpm, accuracy) => {
-    socket.emit('submit-score', {
-      name,
-      roomId,
-      wpm,
-      accuracy,
-    });
+    if (!solo) {
+      socket.emit('submit-score', { name, roomId, wpm, accuracy });
+    }
   };
 
   const getHighlightedText = () => {
@@ -127,7 +142,9 @@ export default function Typingarea() {
   return (
     <div className="relative max-w-5xl w-full mx-auto mt-6 px-6">
       <div className="bg-gradient-to-br from-gray-800 via-gray-900 to-black text-white px-6 py-10 rounded-3xl shadow-2xl space-y-8 mt-12">
-        <h2 className="text-4xl font-bold text-center text-purple-400">Multiplayer Typing Challenge</h2>
+        <h2 className="text-4xl font-bold text-center text-purple-400">
+          {solo ? 'Solo Typing Challenge' : 'Multiplayer Typing Challenge'}
+        </h2>
 
         <div className="bg-gray-700 p-8 rounded-xl text-md leading-relaxed h-48 overflow-y-hidden tracking-wide space-y-2">
           {getHighlightedText()}
@@ -156,26 +173,27 @@ export default function Typingarea() {
           </div>
         </div>
 
-        <div className="pt-6">
-          <h3 className="text-xl font-semibold text-center mb-3">Players in Room</h3>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {players
-              .slice()
-              .sort((a, b) => (b.wpm || 0) - (a.wpm || 0))
-              .map((player, idx) => (
-                <div key={idx} className="bg-gray-800 p-4 rounded-xl text-center shadow-md">
-                  <p className="text-lg font-medium">
-                    {player.name} {player.name === name && <span className="text-sm text-purple-400">(You)</span>}
-                  </p>
-                  <p className="text-sm text-green-300">
-                    WPM: {player.wpm || 0}, Accuracy: {player.accuracy || 0}%
-                  </p>
-                </div>
-              ))}
+        {!solo && (
+          <div className="pt-6">
+            <h3 className="text-xl font-semibold text-center mb-3">Players in Room</h3>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {players
+                .slice()
+                .sort((a, b) => (b.wpm || 0) - (a.wpm || 0))
+                .map((player, idx) => (
+                  <div key={idx} className="bg-gray-800 p-4 rounded-xl text-center shadow-md">
+                    <p className="text-lg font-medium">
+                      {player.name}{' '}
+                      {player.name === name && <span className="text-sm text-purple-400">(You)</span>}
+                    </p>
+                    <p className="text-sm text-green-300">
+                      WPM: {player.wpm || 0}, Accuracy: {player.accuracy || 0}%
+                    </p>
+                  </div>
+                ))}
+            </div>
           </div>
-        </div>
-
-        <Leaderboard players={players} />
+        )}
       </div>
     </div>
   );

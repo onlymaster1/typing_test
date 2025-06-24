@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import io from 'socket.io-client';
 import Typingarea from '../component/Typingarea';
 import Leaderboard from '../component/Leaderboard';
-
-const socket = io('http://localhost:5000', { transports: ['websocket'] });
+import socket from '../socket'; // ✅ Import shared socket
 
 export default function Room() {
   const location = useLocation();
@@ -45,10 +43,6 @@ export default function Room() {
     };
   }, [name, roomId, navigate]);
 
-  const handleScoreSubmit = (score) => {
-    socket.emit('submit-score', { name, roomId, ...score });
-  };
-
   return (
     <div className="min-h-screen bg-gray-900 text-white px-6 py-10">
       <h2 className="text-3xl text-center font-bold text-purple-400">
@@ -56,7 +50,7 @@ export default function Room() {
       </h2>
 
       <div className="mt-6">
-        <Typingarea onScoreSubmit={handleScoreSubmit} />
+        <Typingarea players={players} name={name} />
       </div>
 
       <Leaderboard players={players} />

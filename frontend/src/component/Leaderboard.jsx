@@ -13,7 +13,7 @@ export default function Leaderboard({ players }) {
               <span>{player.wpm || 0} WPM</span>
               <span>{player.accuracy || 0}%</span>
             </li>
-        ))}
+          ))}
       </ul>
     </div>
   );

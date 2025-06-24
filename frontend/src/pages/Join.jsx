@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
-
-const socket = io('http://localhost:5000', { transports: ['websocket'] });
+import socket from '../socket'; // ✅ Use the shared socket instance
 
 export default function Join() {
   const [name, setName] = useState('');

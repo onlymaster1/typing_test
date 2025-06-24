@@ -10,7 +10,7 @@ app.use(cors());
 
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:5173',
+    origin: 'http://localhost:5173', // ✅ Adjust if needed
     methods: ['GET', 'POST'],
   },
 });
@@ -21,50 +21,44 @@ io.on('connection', (socket) => {
   console.log('⚡ New client connected:', socket.id);
 
   socket.on('join-room', ({ name, roomId }) => {
-    if (!rooms[roomId]) {
-      rooms[roomId] = [];
-    }
+    if (!roomId || !name) return;
+
+    if (!rooms[roomId]) rooms[roomId] = [];
 
     const alreadyInRoom = rooms[roomId].some(p => p.name === name);
+
     if (!alreadyInRoom) {
       rooms[roomId].push({
         name,
         socketId: socket.id,
-        score: {
-          wpm: 0,
-          accuracy: 0,
-        },
+        score: { wpm: 0, accuracy: 0 },
       });
+    } else {
+      // In case player refreshes/rejoins with same name
+      const player = rooms[roomId].find(p => p.name === name);
+      player.socketId = socket.id; // update socketId
     }
 
     socket.join(roomId);
 
-    io.to(roomId).emit('room-data', {
-      players: rooms[roomId].map(player => ({
-        name: player.name,
-        socketId: player.socketId,
-        wpm: player.score.wpm,
-        accuracy: player.score.accuracy,
-      })),
-    });
+    // Send room data back
+    sendRoomData(roomId);
   });
 
   socket.on('submit-score', ({ name, roomId, wpm, accuracy }) => {
+    if (!roomId || !name) return;
+
     const players = rooms[roomId];
     if (players) {
       const player = players.find(p => p.name === name);
       if (player) {
-        player.score = { wpm, accuracy };
+        player.score = {
+          wpm: typeof wpm === 'number' ? wpm : 0,
+          accuracy: typeof accuracy === 'number' ? accuracy : 0,
+        };
       }
 
-      io.to(roomId).emit('room-data', {
-        players: players.map(player => ({
-          name: player.name,
-          socketId: player.socketId,
-          wpm: player.score.wpm,
-          accuracy: player.score.accuracy,
-        })),
-      });
+      sendRoomData(roomId);
     }
   });
 
@@ -72,22 +66,29 @@ io.on('connection', (socket) => {
     console.log('🔌 Client disconnected:', socket.id);
 
     for (const roomId in rooms) {
-      rooms[roomId] = rooms[roomId].filter(p => p.socketId !== socket.id);
+      const players = rooms[roomId];
+      const filteredPlayers = players.filter(p => p.socketId !== socket.id);
 
-      io.to(roomId).emit('room-data', {
-        players: rooms[roomId].map(player => ({
-          name: player.name,
-          socketId: player.socketId,
-          wpm: player.score.wpm,
-          accuracy: player.score.accuracy,
-        })),
-      });
-
-      if (rooms[roomId].length === 0) {
+      if (filteredPlayers.length === 0) {
         delete rooms[roomId];
+      } else {
+        rooms[roomId] = filteredPlayers;
+        sendRoomData(roomId);
       }
     }
   });
+
+  function sendRoomData(roomId) {
+    const players = rooms[roomId] || [];
+    io.to(roomId).emit('room-data', {
+      players: players.map(p => ({
+        name: p.name,
+        socketId: p.socketId,
+        wpm: p.score.wpm,
+        accuracy: p.score.accuracy,
+      })),
+    });
+  }
 });
 
 const PORT = 5000;

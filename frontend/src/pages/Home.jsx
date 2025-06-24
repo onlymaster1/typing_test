@@ -9,11 +9,15 @@ export default function Home() {
       <h1 className="text-5xl font-bold mb-12 text-center">Typing King</h1>
       <div className="flex flex-col gap-6 w-full max-w-sm">
         <button
-          className="bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg text-lg transition"
-          onClick={() => navigate('/typingtest')}
-        >
-          Typing Test
-        </button>
+  className="bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg text-lg transition"
+  onClick={() =>
+    navigate('/typingtest', {
+      state: { name: 'Solo Player', roomId: 'solo-room' },
+    })
+  }
+>
+  Typing Test
+</button>
         <button className="bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg text-lg transition"
         onClick={() => navigate('/createRoom')}>
           Create Room
